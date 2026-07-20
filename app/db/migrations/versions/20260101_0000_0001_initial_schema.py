@@ -47,7 +47,9 @@ def upgrade() -> None:
         "vencido",
         name="estado_tramite",
     )
-    estado_tramite.create(op.get_bind(), checkfirst=True)
+    # No se llama a .create() manualmente: op.create_table crea el tipo ENUM
+    # automaticamente como parte del DDL de la tabla (CREATE TYPE + CREATE TABLE).
+    # Crearlo aqui ademas del create_table produce DuplicateObjectError en Postgres.
 
     op.create_table(
         "tramites",
@@ -79,7 +81,6 @@ def upgrade() -> None:
     resultado_validacion = postgresql.ENUM(
         "aprobado", "observado", "rechazado", name="resultado_validacion"
     )
-    resultado_validacion.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "documentos_validados",
@@ -109,7 +110,6 @@ def upgrade() -> None:
     estado_recordatorio = postgresql.ENUM(
         "pendiente", "enviado", "cancelado", name="estado_recordatorio"
     )
-    estado_recordatorio.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "recordatorios",
@@ -170,7 +170,6 @@ def upgrade() -> None:
     op.create_index("ix_conversaciones_ciudadano_id", "conversaciones", ["ciudadano_id"])
 
     rol_mensaje = postgresql.ENUM("ciudadano", "agente", "sistema", name="rol_mensaje")
-    rol_mensaje.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "mensajes",

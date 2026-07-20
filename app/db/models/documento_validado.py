@@ -39,7 +39,12 @@ class DocumentoValidado(TimestampMixin, Base):
     )
     tipo_documento: Mapped[str] = mapped_column(String(120), nullable=False)
     resultado: Mapped[ResultadoValidacion] = mapped_column(
-        Enum(ResultadoValidacion, name="resultado_validacion"), nullable=False
+        Enum(
+            ResultadoValidacion,
+            name="resultado_validacion",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
     )
     observaciones: Mapped[dict[str, object]] = mapped_column(
         JSONVariant, default=dict, nullable=False

@@ -30,7 +30,14 @@ class RagService:
         self._top_k_default = settings.RAG_TOP_K
         self.collection_name = settings.CHROMA_COLLECTION_NORMATIVA
         self._client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
-        self._collection = self._client.get_or_create_collection(name=self.collection_name)
+        # Se fija explicitamente el espacio de distancia a coseno: Chroma usa "l2"
+        # (distancia euclidiana) por defecto, que no es directamente convertible a la
+        # similitud [0,1] que espera RAG_SIMILARITY_THRESHOLD. Solo aplica al crear la
+        # coleccion por primera vez; una coleccion ya creada con otro espacio no se
+        # puede migrar in-place (hay que recrearla).
+        self._collection = self._client.get_or_create_collection(
+            name=self.collection_name, metadata={"hnsw:space": "cosine"}
+        )
 
     def indexar_chunks(
         self,

@@ -38,7 +38,11 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
     CHROMA_COLLECTION_NORMATIVA: str = "normativa_municipal"
-    RAG_SIMILARITY_THRESHOLD: float = 0.55
+    # Calibrado empiricamente contra el modelo de embeddings por defecto de ChromaDB
+    # (all-MiniLM-L6-v2, similitud coseno): consultas irrelevantes midieron ~0.20-0.38
+    # de similitud contra el corpus de demo, consultas relevantes ~0.50-0.54. 0.45 separa
+    # ambos grupos con margen. Ver docs/decisiones-tecnicas.md ADR-006.
+    RAG_SIMILARITY_THRESHOLD: float = 0.45
     RAG_TOP_K: int = 5
 
     # --- Anthropic ---

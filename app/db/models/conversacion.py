@@ -51,7 +51,14 @@ class Mensaje(TimestampMixin, Base):
     conversacion_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("conversaciones.id", ondelete="CASCADE"), nullable=False
     )
-    rol: Mapped[RolMensaje] = mapped_column(Enum(RolMensaje, name="rol_mensaje"), nullable=False)
+    rol: Mapped[RolMensaje] = mapped_column(
+        Enum(
+            RolMensaje,
+            name="rol_mensaje",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+    )
     contenido: Mapped[str] = mapped_column(Text, nullable=False)
 
     conversacion: Mapped[Conversacion] = relationship(back_populates="mensajes")

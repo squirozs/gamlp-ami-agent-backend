@@ -44,7 +44,11 @@ class Recordatorio(TimestampMixin, Base):
     mensaje: Mapped[str] = mapped_column(String(1000), nullable=False)
     fecha_programada: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     estado: Mapped[EstadoRecordatorio] = mapped_column(
-        Enum(EstadoRecordatorio, name="estado_recordatorio"),
+        Enum(
+            EstadoRecordatorio,
+            name="estado_recordatorio",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         default=EstadoRecordatorio.PENDIENTE,
         nullable=False,
     )

@@ -4,13 +4,21 @@ Esta guia describe como levantar AMI Copiloto de punta a punta para una demo
 convincente **sin** depender de credenciales reales de e-SITRAM/iGOB (que llegaran
 mas adelante) ni, si se quiere, de un numero de WhatsApp real de Twilio.
 
+Este flujo completo (build, migraciones, seed, ingesta de normativa, busqueda RAG,
+creacion de tramite, dashboard) se corrio y verifico de punta a punta contra **Docker
+dentro de WSL Ubuntu**, que es el setup recomendado en Windows — corre todos los
+comandos de esta guia desde una terminal de WSL (`wsl` en cmd/PowerShell, o la app de
+tu distro), no desde PowerShell/cmd directamente, aunque el proyecto viva en una
+carpeta de Windows (`/mnt/c/...` o `/mnt/e/...`).
+
 ## 1. Que es indispensable y que es opcional
 
 | Componente | Estado para la demo | Que hacer |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | **Indispensable** | No hay modo mock para el LLM/vision: sin esta key el agente no responde ni valida documentos. Conseguir una key en https://console.anthropic.com/ |
+| Embeddings del RAG | **No requiere ninguna key** | ChromaDB descarga y corre localmente su propio modelo (`all-MiniLM-L6-v2`, ONNX, ~80 MB) la primera vez que se indexa o busca. Esa descarga tarda 15-30s la primera vez; corridas posteriores son instantaneas |
 | `ESITRAM_MODE` / `IGOB_MODE` | Ya en `mock` por defecto | No requiere accion. Los mocks generan codigos de tramite y estados deterministicos (`app/integrations/esitram_mock.py`, `igob_mock.py`) |
-| Docker Desktop (o Docker Engine + Compose) | **Indispensable** para el flujo con un solo comando | Instalar si no esta disponible. Levanta Postgres, Redis, ChromaDB, la API y el worker |
+| Docker Desktop con integracion WSL (o Docker Engine nativo en la distro) | **Indispensable** para el flujo con un solo comando | Levanta Postgres, Redis, ChromaDB, la API y el worker. Verificado con `docker compose` v5 corriendo dentro de WSL Ubuntu |
 | `TWILIO_*` | **Opcional para la demo** | Si no tienes un sandbox de WhatsApp de Twilio a mano, se puede demostrar todo el flujo pegandole directo a la API REST (seccion 4) sin pasar por WhatsApp. Si quieres el flujo real por WhatsApp, usa el sandbox gratuito de Twilio (`https://www.twilio.com/docs/whatsapp/sandbox`) y pon `TWILIO_WEBHOOK_VALIDATE=false` solo en ese entorno de pruebas si necesitas simular peticiones sin firma valida |
 | `JWT_SECRET_KEY`, `APP_SECRET_KEY` | Indispensable (cualquier valor) | Genera algo random, ej. `openssl rand -hex 32`. El usuario admin del dashboard usa `APP_SECRET_KEY` como contrasena (ver ADR-007 en `decisiones-tecnicas.md`) |
 
@@ -145,3 +153,39 @@ o pagina oficial del GAMLP.
 Sin tocar codigo de negocio: en `.env`, cambiar `ESITRAM_MODE=real` (o `IGOB_MODE=real`)
 y completar `ESITRAM_API_URL` / `ESITRAM_API_KEY` (o los equivalentes de iGOB). Ver
 `app/integrations/factory.py` y ADR-001 en `docs/decisiones-tecnicas.md`.
+
+## 9. Problemas frecuentes (encontrados corriendo el stack real)
+
+**`port is already allocated` al levantar Postgres.** Algun otro proyecto o un
+Postgres nativo ya esta usando el puerto 5432 del host (comun si trabajas con varios
+proyectos Docker a la vez). Por eso `docker-compose.yml` mapea Postgres al **5433** del
+host por defecto (`docker compose exec postgres psql -U ami -d ami_copiloto` sigue
+funcionando igual, ya que corre dentro del contenedor y no depende del puerto host). Si
+igual choca, revisa `docker ps -a` para ver que otro contenedor esta usando el puerto y
+cambia el mapeo en `docker-compose.yml`.
+
+**Cambie una variable en `.env` pero no se aplica.** `docker compose restart <servicio>`
+reinicia el proceso **con las variables de entorno que ya tenia el contenedor al
+crearse** — no relee `.env`. Despues de editar `.env`, usa:
+```bash
+docker compose up -d --force-recreate api
+```
+(o `worker`, segun corresponda) para que el contenedor se recree con los valores
+nuevos. `docker compose down && docker compose up -d` tambien funciona, pero
+`--force-recreate api` es mas rapido si Postgres/Redis/Chroma ya estan arriba.
+
+**La primera busqueda o ingesta de normativa tarda ~15-30 segundos.** Es la descarga
+del modelo de embeddings (`all-MiniLM-L6-v2`, ~80 MB) que ChromaDB hace en el momento,
+no un cuelgue. Con `docker compose run --rm api ...` (usado por `demo_reset.sh` y en
+la seccion 7) esa descarga se repite cada vez porque el contenedor `run` es efimero; si
+vas a ingestar varios documentos de normativa en una sesion de trabajo, es mas rapido
+entrar a un shell del contenedor (`docker compose exec api sh`) y correr varias
+ingestas ahi dentro, en vez de un `docker compose run` por documento.
+
+**Al construir la demo se encontraron y corrigieron ademas:** conflicto de puerto de
+Postgres, un `docker compose restart` que no recogia cambios de `.env`, un `ENUM` de
+Postgres duplicado en la migracion, un desalineamiento cliente/servidor de ChromaDB, un
+umbral de similitud del RAG calibrado con datos sinteticos en vez de un modelo de
+embeddings real, y el archivo de normativa de ejemplo faltante dentro del contenedor.
+El detalle tecnico completo de cada uno esta en ADR-006 y ADR-008 de
+`docs/decisiones-tecnicas.md`.

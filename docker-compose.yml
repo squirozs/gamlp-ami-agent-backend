@@ -7,7 +7,12 @@ services:
       POSTGRES_PASSWORD: ami
       POSTGRES_DB: ami_copiloto
     ports:
-      - "5432:5432"
+      # Host 5433 -> container 5432: evita choque con un Postgres local o de otro
+      # proyecto ya escuchando en el 5432 del host. La comunicacion interna entre
+      # contenedores (api/worker -> postgres) usa siempre el puerto 5432 del
+      # contenedor via DNS de docker compose (postgres:5432), esto solo afecta el
+      # acceso desde el host (ej. un cliente psql local).
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,7 +33,11 @@ services:
       retries: 10
 
   chroma:
-    image: chromadb/chroma:0.5.5
+    # El SDK de Python (pyproject.toml: chromadb>=0.5.5) trae la ultima release del
+    # cliente, que no es compatible con el protocolo de servidores 0.x antiguos.
+    # Se usa "latest" para mantener cliente y servidor alineados sin fijar un par de
+    # versiones fragil; para produccion, fijar un tag exacto y actualizar ambos juntos.
+    image: chromadb/chroma:latest
     container_name: ami_chroma
     ports:
       - "8001:8000"
@@ -63,6 +72,10 @@ services:
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./app:/srv/app/app
+      # docs se monta (no se copia en el Dockerfile) para poder correr
+      # app.ingestion.ingest_normativa contra archivos de docs/normativa/ sin
+      # rebuildear la imagen cada vez que se agrega/reemplaza normativa.
+      - ./docs:/srv/app/docs
 
   worker:
     build:

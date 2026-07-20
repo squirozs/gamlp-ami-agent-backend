@@ -41,7 +41,13 @@ class Tramite(TimestampMixin, Base):
     sistema_origen: Mapped[str] = mapped_column(String(50), nullable=False)  # esitram | igob
     codigo_externo: Mapped[str | None] = mapped_column(String(100), nullable=True)
     estado: Mapped[EstadoTramite] = mapped_column(
-        Enum(EstadoTramite, name="estado_tramite"), default=EstadoTramite.INICIADO, nullable=False
+        Enum(
+            EstadoTramite,
+            name="estado_tramite",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        default=EstadoTramite.INICIADO,
+        nullable=False,
     )
     metadata_tramite: Mapped[dict[str, object]] = mapped_column(
         JSONVariant, default=dict, nullable=False
