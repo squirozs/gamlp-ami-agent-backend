@@ -1,0 +1,96 @@
+"""Configuracion central de la aplicacion, leida desde variables de entorno."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Configuracion tipada de la aplicacion. Ver .env.example para el listado completo."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    # --- App general ---
+    APP_ENV: Literal["local", "staging", "production"] = "local"
+    APP_DEBUG: bool = True
+    APP_NAME: str = "ami-copiloto-backend"
+    APP_HOST: str = "0.0.0.0"
+    APP_PORT: int = 8000
+    APP_SECRET_KEY: str = "change-me"
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
+
+    # --- Base de datos ---
+    DATABASE_URL: str = "postgresql+asyncpg://ami:ami@localhost:5432/ami_copiloto"
+    DATABASE_URL_SYNC: str = "postgresql+psycopg2://ami:ami@localhost:5432/ami_copiloto"
+
+    # --- Redis ---
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # --- ChromaDB / RAG ---
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8001
+    CHROMA_COLLECTION_NORMATIVA: str = "normativa_municipal"
+    RAG_SIMILARITY_THRESHOLD: float = 0.55
+    RAG_TOP_K: int = 5
+
+    # --- Anthropic ---
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    ANTHROPIC_MAX_TOKENS: int = 1024
+
+    # --- JWT ---
+    JWT_SECRET_KEY: str = "change-me"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # --- Twilio ---
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+10000000000"
+    TWILIO_WEBHOOK_VALIDATE: bool = True
+
+    # --- Rate limiting ---
+    RATE_LIMIT_MESSAGES_PER_MINUTE: int = 10
+    RATE_LIMIT_DOCUMENTS_PER_HOUR: int = 20
+
+    # --- Integraciones municipales ---
+    ESITRAM_MODE: Literal["mock", "real"] = "mock"
+    ESITRAM_API_URL: str = ""
+    ESITRAM_API_KEY: str = ""
+    ESITRAM_TIMEOUT_SECONDS: int = 8
+
+    IGOB_MODE: Literal["mock", "real"] = "mock"
+    IGOB_API_URL: str = ""
+    IGOB_API_KEY: str = ""
+    IGOB_TIMEOUT_SECONDS: int = 8
+
+    GESTION_DOCUMENTAL_MODE: Literal["mock", "real"] = "mock"
+    GESTION_DOCUMENTAL_API_URL: str = ""
+    GESTION_DOCUMENTAL_API_KEY: str = ""
+
+    # --- Proactividad ---
+    PROACTIVE_ENGINE_INTERVAL_MINUTES: int = 30
+    PROACTIVE_ENGINE_ENABLED: bool = True
+
+    # --- Logging ---
+    LOG_LEVEL: str = "INFO"
+    LOG_JSON: bool = True
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Devuelve una instancia cacheada de Settings (singleton por proceso)."""
+    return Settings()
