@@ -96,6 +96,15 @@ Response `200`:
 
 Response `200`: array del mismo shape que arriba.
 
+### GET /tramites?codigo_externo={string}
+
+Busca por el codigo de seguimiento (el que conoce el ciudadano, ej.
+`ESITRAM-MOCK-XXXX`), util para un funcionario que no tiene a mano el UUID interno.
+Response `200`: array de 0 o 1 elemento, mismo shape que arriba (`[]` si no existe).
+
+Debe indicarse `ciudadano_id` o `codigo_externo` (al menos uno); sin ninguno de los
+dos, `422`.
+
 ### POST /tramites
 
 Request:

@@ -8,7 +8,7 @@ el modelo y despachar llamadas a traves del tool_registry."""
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai import types
@@ -119,9 +119,14 @@ class TramiteOrchestrator:
     async def _generate(
         self, contents: list[types.Content], config: types.GenerateContentConfig
     ) -> types.GenerateContentResponse:
+        # list[] es invariante para mypy: list[Content] no matchea estructuralmente
+        # el ContentListUnion que pide generate_content aunque Content sea una de sus
+        # alternativas. cast() es solo para mypy; en runtime no hace nada.
+        contenido_para_generar = cast(types.ContentListUnion, contents)
+
         async def llamar(modelo: str) -> types.GenerateContentResponse:
             return await self._client.aio.models.generate_content(
-                model=modelo, contents=contents, config=config
+                model=modelo, contents=contenido_para_generar, config=config
             )
 
         return await generar_con_fallback(self._modelos, llamar)

@@ -33,6 +33,15 @@ class TramiteService:
         )
         return list(result.scalars().all())
 
+    async def buscar_por_codigo_externo(self, codigo_externo: str) -> Tramite | None:
+        """Busca un tramite por su codigo de seguimiento (el que conoce el ciudadano,
+        ej. "ESITRAM-MOCK-XXXX"), para funcionarios que no tienen a mano el UUID
+        interno del tramite/ciudadano."""
+        result = await self._session.execute(
+            select(Tramite).where(Tramite.codigo_externo == codigo_externo)
+        )
+        return result.scalar_one_or_none()
+
     async def crear(
         self,
         ciudadano_id: uuid.UUID,
