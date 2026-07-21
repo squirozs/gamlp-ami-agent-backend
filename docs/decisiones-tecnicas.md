@@ -358,3 +358,61 @@ tool se uso) aunque ya no se le exponga al ciudadano en el mensaje.
 `encontrado=false` (ver `_sin_resultados` en `internet_search_service.py`) en vez de
 fallar — el sistema se degrada al comportamiento anterior (solo `buscar_normativa`) sin
 romper nada.
+
+---
+
+## ADR-012: El modelo necesita que le inyecten ciudadano_id y le avisen de las fotos
+
+**Contexto:** probando el flujo real por WhatsApp (mandar una foto de CI/NIT), el
+agente respondia "no tengo una respuesta para eso en este momento" — el fallback de
+`_extraer_texto` cuando el modelo no genera ningun texto. Investigando, se encontraron
+dos huecos de diseño reales, presentes desde el inicio del proyecto (no introducidos
+por la migracion a Gemini):
+
+1. **El modelo nunca se entera de que llego una foto.** `imagen_actual` (contextvar)
+   solo lo lee la tool `validar_documento` cuando se ejecuta — pero nada en el texto
+   que ve el modelo le indica que hay una foto adjunta en este turno. El modelo no
+   tiene telepatia: sin una senal explicita, no tiene motivo para siquiera considerar
+   llamar a `validar_documento`.
+2. **Ninguna tool que requiere `ciudadano_id` (`programar_recordatorio`) o que lo
+   requeriria para crear un tramite tenia forma de conseguirlo.** El modelo no puede
+   inventar un UUID, y pedirselo al ciudadano por WhatsApp ("dame tu UUID") no tiene
+   sentido — un ciudadano real nunca conoce ese numero.
+3. **No existia ninguna tool para crear un tramite desde la conversacion.** Solo
+   `POST /tramites` (usado por el dashboard) podia crear uno. Sin un tramite_id real,
+   `validar_documento` no tenia contra que registrar el resultado, y
+   `consultar_estado_tramite`/`programar_recordatorio` no tenian nada que consultar.
+
+**Decision:**
+
+- `TramiteOrchestrator.responder()` ahora recibe `ciudadano_id` (lo resuelve
+  `webhooks.py` desde el telefono, como ya hacia antes) y lo inyecta como texto en
+  `system_instruction` en cada llamada ("contexto interno... ciudadano_id=..."),
+  aclarando que no es un dato que el ciudadano haya dado y que no se le debe
+  mencionar ni pedir.
+- Cuando `imagen is not None`, se agrega una nota de texto al mensaje que ve el
+  modelo (`"[El ciudadano acaba de adjuntar una foto...]"`) — asi el modelo sabe que
+  debe considerar llamar a `validar_documento`, aunque la imagen en si le siga
+  llegando solo a la tool (el modelo nunca "ve" los bytes, sigue sin poder inventar
+  contenido de la foto).
+- Se agregaron dos tools nuevas: `iniciar_tramite`
+  (`app/agents/tools/start_procedure.py`, llama a `TramiteService.crear`) y
+  `listar_tramites_ciudadano` (`app/agents/tools/list_citizen_procedures.py`, llama a
+  `TramiteService.listar_por_ciudadano`). La segunda es la pieza que cierra el loop:
+  el modelo puede recuperar el `tramite_id` (UUID interno) de un ciudadano en
+  cualquier turno futuro sin tener que "recordarlo" de un mensaje anterior — util
+  porque el historial persistido son solo turnos de texto (ver ADR de migracion a
+  Gemini), y el UUID interno no es algo que se le muestre nunca al ciudadano (solo
+  ve su `codigo_externo`, ej. "ESITRAM-MOCK-XXXX").
+- `SYSTEM_PROMPT` (v1.4.0) se actualizo con reglas explicitas sobre cuando usar cada
+  tool nueva y la prohibicion de mostrar el `tramite_id` (UUID) al ciudadano.
+
+**Verificado en vivo** (con `tool_registry.ejecutar` mockeado para no depender de
+Postgres en el smoke test): flujo completo mensaje -> iniciar_tramite (con
+ciudadano_id correcto, sin que se le pidiera al ciudadano) -> foto de documento sin
+texto -> listar_tramites_ciudadano -> validar_documento con el tramite_id correcto,
+todo sin exponer ningun UUID en las respuestas.
+
+**Consecuencia:** el ciudadano ahora puede completar el flujo entero (consultar
+requisitos, iniciar su tramite, validar sus documentos, consultar estado, programar
+recordatorio) sin salir de la conversacion de WhatsApp ni escribir jamas un UUID.

@@ -10,9 +10,11 @@ from __future__ import annotations
 # Importar cada modulo de tool para que se auto-registre en tool_registry.
 from app.agents.tools import (  # noqa: E402,F401
     check_procedure_status,
+    list_citizen_procedures,
     schedule_reminder,
     search_internet,
     search_regulations,
+    start_procedure,
     validate_document,
 )
 from app.agents.tools.registry import ToolRegistry, tool_registry

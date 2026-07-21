@@ -7,6 +7,23 @@ import pytest
 from app.agents.tools.registry import ToolRegistry
 
 
+def test_todas_las_tools_del_agente_quedan_registradas() -> None:
+    # Importar app.agents.tools ejecuta el auto-registro de cada tool via decorador.
+    from app.agents.tools import tool_registry as tool_registry_global
+
+    esperadas = {
+        "buscar_normativa",
+        "buscar_en_internet",
+        "consultar_estado_tramite",
+        "iniciar_tramite",
+        "listar_tramites_ciudadano",
+        "programar_recordatorio",
+        "validar_documento",
+    }
+    for nombre in esperadas:
+        assert nombre in tool_registry_global, f"tool '{nombre}' no esta registrada"
+
+
 @pytest.mark.asyncio
 async def test_registry_ejecuta_tool_registrada() -> None:
     registry = ToolRegistry()

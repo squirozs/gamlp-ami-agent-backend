@@ -7,6 +7,7 @@ el modelo y despachar llamadas a traves del tool_registry."""
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from google import genai
@@ -37,14 +38,20 @@ class TramiteOrchestrator:
         self,
         historial: list[dict[str, str]],
         mensaje_ciudadano: str,
+        ciudadano_id: uuid.UUID,
         imagen: tuple[bytes, str] | None = None,
     ) -> str:
         """Procesa un turno de conversacion y devuelve el texto de respuesta del agente.
 
         `historial` son turnos previos como `{"role": "user"|"model", "content": str}`
-        (Gemini usa "model" donde Anthropic/OpenAI usan "assistant"). `imagen` (bytes,
-        media_type) se deja disponible solo para la tool validar_documento durante este
-        turno; nunca se persiste."""
+        (Gemini usa "model" donde Anthropic/OpenAI usan "assistant"). `ciudadano_id` se
+        inyecta como contexto interno (el modelo lo necesita para llamar
+        iniciar_tramite, listar_tramites_ciudadano y programar_recordatorio — nunca
+        podria adivinar un UUID por su cuenta). `imagen` (bytes, media_type) se deja
+        disponible para la tool validar_documento durante este turno via contextvar
+        (nunca se persiste), y ademas se le avisa al modelo por texto que llego una
+        foto: sin ese aviso el modelo no tiene forma de saber que hay una imagen
+        adjunta, ya que la tool es el unico canal por el que "ve" la foto."""
         token = imagen_actual.set(imagen) if imagen is not None else None
         try:
             contents: list[types.Content] = [
@@ -53,12 +60,24 @@ class TramiteOrchestrator:
                 )
                 for turno in historial
             ]
+
+            mensaje_para_modelo = mensaje_ciudadano
+            if imagen is not None:
+                nota = "[El ciudadano acaba de adjuntar una foto de un documento en este mensaje.]"
+                mensaje_para_modelo = f"{mensaje_ciudadano}\n{nota}" if mensaje_ciudadano else nota
+
             contents.append(
-                types.Content(role="user", parts=[types.Part.from_text(text=mensaje_ciudadano)])
+                types.Content(role="user", parts=[types.Part.from_text(text=mensaje_para_modelo)])
             )
 
+            contexto_interno = (
+                "\n\nContexto interno de esta conversacion (no se lo repitas al "
+                'ciudadano de forma literal ni menciones que es un "contexto interno" '
+                f"o un ID técnico; es solo para que uses las tools correctamente): "
+                f"ciudadano_id={ciudadano_id}."
+            )
             config = types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
+                system_instruction=SYSTEM_PROMPT + contexto_interno,
                 tools=tool_registry.gemini_tools(),
                 max_output_tokens=self._max_tokens,
             )

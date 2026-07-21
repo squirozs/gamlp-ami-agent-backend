@@ -135,7 +135,9 @@ async def whatsapp_webhook(
         ]
 
         orchestrator = TramiteOrchestrator()
-        respuesta = await orchestrator.responder(historial_gemini, cuerpo, imagen=imagen)
+        respuesta = await orchestrator.responder(
+            historial_gemini, cuerpo, ciudadano_id=ciudadano.id, imagen=imagen
+        )
 
         await conv_service.agregar_mensaje(conversacion.id, RolMensaje.AGENTE, respuesta)
 
