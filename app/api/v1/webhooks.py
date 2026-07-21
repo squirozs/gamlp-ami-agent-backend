@@ -193,12 +193,18 @@ def _formatear_tramites(tramites: list[Tramite]) -> str:
 async def _descargar_media(
     media_url: str, account_sid: str, auth_token: str, media_type: str
 ) -> tuple[bytes, str] | None:
-    """Descarga la imagen adjunta de Twilio en memoria (no se escribe a disco)."""
+    """Descarga la imagen adjunta de Twilio en memoria (no se escribe a disco).
+
+    Las URLs de media de Twilio responden con un 307 hacia la ubicacion real del
+    archivo (a veces en otro host); httpx no sigue redirects por defecto, asi que sin
+    follow_redirects=True la descarga siempre fallaba con "307 Temporary Redirect" —
+    la foto nunca llegaba a validar_documento, sin importar que tan bien estuviera el
+    resto del flujo."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             response = await client.get(media_url, auth=(account_sid, auth_token))
             response.raise_for_status()
             return response.content, media_type
-    except httpx.HTTPError:
-        logger.warning("whatsapp_media_download_failed")
+    except httpx.HTTPError as exc:
+        logger.warning("whatsapp_media_download_failed", error_type=type(exc).__name__)
         return None
