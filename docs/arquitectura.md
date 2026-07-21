@@ -33,6 +33,7 @@ flowchart TB
         T2[consultar_estado_tramite]
         T3[validar_documento]
         T4[programar_recordatorio]
+        T5[buscar_en_internet]
     end
 
     subgraph Servicios["app/services (logica pura)"]
@@ -41,6 +42,7 @@ flowchart TB
         SDOC[DocumentoService]
         SREC[RecordatorioService]
         SCONV[ConversacionService]
+        SWEB[InternetSearchService]
     end
 
     subgraph Datos
@@ -62,11 +64,12 @@ flowchart TB
     WA -->|mensaje entrante| WH
     WH --> ORCH
     ORCH --> REG
-    REG --> T1 & T2 & T3 & T4
+    REG --> T1 & T2 & T3 & T4 & T5
     T1 --> SRAG --> CHROMA
     T2 --> STR --> ESITRAM & IGOB
     T3 --> SDOC -->|solo en memoria| GeminiVision[Gemini Vision API]
     T4 --> SREC --> PG
+    T5 -->|solo si T1 no encuentra nada| SWEB -->|no es fuente oficial| TAVILY[Tavily Search API]
     ORCH --> SCONV --> PG
     WH -->|respuesta| WA
 

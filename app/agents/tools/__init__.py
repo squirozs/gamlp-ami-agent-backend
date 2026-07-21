@@ -11,6 +11,7 @@ from __future__ import annotations
 from app.agents.tools import (  # noqa: E402,F401
     check_procedure_status,
     schedule_reminder,
+    search_internet,
     search_regulations,
     validate_document,
 )

@@ -312,3 +312,42 @@ diario (no es un cupo compartido por key). Esto significa que:
    Settings -> Plan de facturacion). Con facturacion activa el limite diario del
    nivel gratuito ya no aplica; el costo de una demo corta es minimo (centavos de
    dolar por el volumen de requests de una demo de pitch).
+
+---
+
+## ADR-011: Busqueda web real (Tavily) como complemento de buscar_normativa, no reemplazo
+
+**Contexto:** el corpus de normativa ingerido para la demo (`docs/normativa/ejemplo_licencia_funcionamiento.txt`)
+es deliberadamente pequeno (ver guia-demo.md), asi que `buscar_normativa` responde
+`encontrado=false` para cualquier rubro o tramite que no este explicitamente cubierto
+ahi (ej. "venta de electrodomesticos" especificamente, o tramites de otra entidad como
+el NIT ante el SIN). Se probo primero la busqueda nativa de Google integrada en Gemini
+(`types.Tool(google_search=...)`), pero el nivel gratuito de la API devuelve `429` con
+cupo 0 para grounding — a diferencia de generacion de texto/vision, esa funcionalidad
+especifica requiere facturacion activa. Se opto por Tavily (https://tavily.com): API de
+busqueda pensada para agentes de IA, con nivel gratuito sin tarjeta (1000
+busquedas/mes), verificado en vivo con consultas reales sobre tramites bolivianos.
+
+**Decision:** se agrego una tool nueva, `buscar_en_internet`
+(`app/agents/tools/search_internet.py` + `app/services/internet_search_service.py`),
+que el agente puede usar cuando `buscar_normativa` no encuentra nada relevante. A
+diferencia de `buscar_normativa`, esto **no es una fuente oficial verificada**: es
+busqueda web abierta. Por eso el `SYSTEM_PROMPT` (regla 2, v1.2.0) obliga a distinguir
+explicitamente el origen de la informacion citada — el agente debe decir que la
+informacion viene de internet (con la fuente/URL) y sugerir confirmarla en un canal
+oficial del GAMLP antes de que el ciudadano actue solo en base a eso, en vez de darle
+el mismo peso que a una fuente ingerida y verificada manualmente (ver ADR-006).
+
+**Por que no reemplaza a buscar_normativa:** el valor central del producto (y el punto
+mas fuerte de la demo, ver guia-demo.md seccion 5) es que el agente nunca inventa
+normativa municipal — eso depende de que el corpus ingerido sea texto verificado
+manualmente contra la fuente oficial (ADR-006). Abrir la puerta a "buscar en internet y
+tratarlo igual que normativa oficial" reintroduciria ese riesgo. `buscar_en_internet`
+existe para no dejar al ciudadano sin ninguna orientacion quando el corpus de demo
+todavia no cubre su caso, siempre y cuando quede claro que es informacion a verificar,
+no un dato oficial confirmado.
+
+**Consecuencia:** si `TAVILY_API_KEY` no esta configurada, la tool responde
+`encontrado=false` (ver `_sin_resultados` en `internet_search_service.py`) en vez de
+fallar — el sistema se degrada al comportamiento anterior (solo `buscar_normativa`) sin
+romper nada.

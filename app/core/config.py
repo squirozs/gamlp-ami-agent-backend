@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     GEMINI_FALLBACK_MODEL: str = "gemini-flash-latest"
     GEMINI_MAX_TOKENS: int = 1024
 
+    # --- Tavily (busqueda web real, complementa el RAG de normativa) ---
+    # Vacio = la tool buscar_en_internet responde "no configurada" en vez de fallar.
+    TAVILY_API_KEY: str = ""
+    TAVILY_MAX_RESULTS: int = 4
+
     # --- JWT ---
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
