@@ -23,6 +23,7 @@ htmlcov/
 chroma_data/
 postgres_data/
 *.sqlite3
+test.db
 
 # Docs / ide
 .vscode/

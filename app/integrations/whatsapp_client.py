@@ -1,7 +1,9 @@
 """Cliente de envio saliente de mensajes de WhatsApp via Twilio.
 
-Usado por el orquestador del agente (respuestas conversacionales) y por el motor de
-proactividad (avisos de vencimiento / cambio de estado)."""
+Usado por el orquestador del agente (respuestas conversacionales), el manejo de
+comandos deterministicos del webhook (borrar historial / ver tramites, ver
+app/api/v1/webhooks.py) y por el motor de proactividad (avisos de vencimiento /
+cambio de estado)."""
 
 from __future__ import annotations
 
@@ -26,12 +28,22 @@ class WhatsAppClient:
         self._from_number = settings.TWILIO_WHATSAPP_NUMBER
 
     async def enviar_mensaje(self, to_number: str, body: str) -> str:
-        """Envia un mensaje de texto y devuelve el SID del mensaje creado por Twilio."""
+        """Envia un mensaje de texto libre."""
+        return await self._enviar(to_number, {"Body": body})
+
+    async def enviar_menu(self, to_number: str, content_sid: str) -> str:
+        """Envia un mensaje interactivo (Content Template de Twilio, ej.
+        twilio/quick-reply) referenciado por su ContentSid — ver
+        scripts/setup_whatsapp_menu.py para como se crea ese template."""
+        return await self._enviar(to_number, {"ContentSid": content_sid})
+
+    async def _enviar(self, to_number: str, campos: dict[str, str]) -> str:
+        """Devuelve el SID del mensaje creado por Twilio."""
         url = f"{_TWILIO_API_BASE}/Accounts/{self._account_sid}/Messages.json"
         payload = {
             "From": self._from_number,
             "To": to_number if to_number.startswith("whatsapp:") else f"whatsapp:{to_number}",
-            "Body": body,
+            **campos,
         }
         try:
             async with httpx.AsyncClient(timeout=10) as client:

@@ -42,6 +42,17 @@ class ConversacionService:
             await self._session.refresh(conversacion)
         return conversacion
 
+    async def cerrar_conversacion(self, conversacion_id: uuid.UUID) -> None:
+        """Marca la conversacion como inactiva: el proximo mensaje del ciudadano
+        crea una conversacion nueva (ver obtener_conversacion_activa), que es el
+        efecto de "borrar historial" desde la perspectiva del ciudadano — el
+        historial viejo no se borra de la base, simplemente deja de alimentar el
+        contexto que ve el modelo en turnos futuros."""
+        conversacion = await self._session.get(Conversacion, conversacion_id)
+        if conversacion is not None:
+            conversacion.activa = False
+            await self._session.commit()
+
     async def agregar_mensaje(
         self, conversacion_id: uuid.UUID, rol: RolMensaje, contenido: str
     ) -> Mensaje:

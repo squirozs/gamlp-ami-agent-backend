@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+10000000000"
     TWILIO_WEBHOOK_VALIDATE: bool = True
+    # ContentSid del Content Template de quick-reply creado por
+    # scripts/setup_whatsapp_menu.py. Vacio = no se manda menu de botones.
+    TWILIO_MENU_CONTENT_SID: str = ""
 
     # --- Rate limiting ---
     RATE_LIMIT_MESSAGES_PER_MINUTE: int = 10
