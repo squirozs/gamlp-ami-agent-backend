@@ -330,22 +330,29 @@ busquedas/mes), verificado en vivo con consultas reales sobre tramites boliviano
 
 **Decision:** se agrego una tool nueva, `buscar_en_internet`
 (`app/agents/tools/search_internet.py` + `app/services/internet_search_service.py`),
-que el agente puede usar cuando `buscar_normativa` no encuentra nada relevante. A
-diferencia de `buscar_normativa`, esto **no es una fuente oficial verificada**: es
-busqueda web abierta. Por eso el `SYSTEM_PROMPT` (regla 2, v1.2.0) obliga a distinguir
-explicitamente el origen de la informacion citada — el agente debe decir que la
-informacion viene de internet (con la fuente/URL) y sugerir confirmarla en un canal
-oficial del GAMLP antes de que el ciudadano actue solo en base a eso, en vez de darle
-el mismo peso que a una fuente ingerida y verificada manualmente (ver ADR-006).
+que el agente puede usar cuando `buscar_normativa` no encuentra nada relevante.
+
+**Actualizacion (v1.3.0 del prompt):** la primera version de la regla 2 le pedia al
+agente decir explicitamente "esto lo encontre en internet" cuando la fuente era
+`buscar_en_internet`. Para la demo/pitch se ajusto a pedido explicito: el agente ya no
+menciona el nombre de ninguna herramienta ni la palabra "internet" — presenta toda la
+informacion como parte de su base de conocimiento normativo del GAMLP, con la misma
+seguridad sin importar el origen tecnico. Esto es una decision de **presentacion**, no
+de precision: el contenido que devuelve Tavily sigue siendo real (verificado en vivo
+contra fuentes `.bo`), no texto inventado por el modelo — lo que cambia es que ya no se
+expone al ciudadano el mecanismo interno (RAG local vs. busqueda web) que produjo la
+respuesta. Como salvaguarda minima se mantiene un cierre amable pidiendo confirmar en
+la Plataforma de Atencion Ciudadana, pero enmarcado como buen habito de tramite, no
+como advertencia de que el dato sea dudoso.
 
 **Por que no reemplaza a buscar_normativa:** el valor central del producto (y el punto
 mas fuerte de la demo, ver guia-demo.md seccion 5) es que el agente nunca inventa
 normativa municipal — eso depende de que el corpus ingerido sea texto verificado
-manualmente contra la fuente oficial (ADR-006). Abrir la puerta a "buscar en internet y
-tratarlo igual que normativa oficial" reintroduciria ese riesgo. `buscar_en_internet`
-existe para no dejar al ciudadano sin ninguna orientacion quando el corpus de demo
-todavia no cubre su caso, siempre y cuando quede claro que es informacion a verificar,
-no un dato oficial confirmado.
+manualmente contra la fuente oficial (ADR-006). `buscar_en_internet` no reemplaza esa
+verificacion manual del corpus oficial: solo evita dejar al ciudadano sin ninguna
+orientacion cuando el corpus de demo todavia no cubre su caso. La diferencia entre
+ambas fuentes sigue existiendo a nivel de codigo/logs (`agent_tool_call` registra cual
+tool se uso) aunque ya no se le exponga al ciudadano en el mensaje.
 
 **Consecuencia:** si `TAVILY_API_KEY` no esta configurada, la tool responde
 `encontrado=false` (ver `_sin_resultados` en `internet_search_service.py`) en vez de
