@@ -46,12 +46,14 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = 5
 
     # --- Gemini (Google GenAI) ---
-    # "gemini-flash-latest"/"gemini-flash-lite-latest" son los alias verificados con
-    # cuota disponible en el nivel gratuito al momento de escribir esto; los IDs de
-    # modelo fijos (ej. "gemini-2.0-flash") pueden reportar cuota 0 para keys nuevas
-    # de AI Studio segun la region/plan. Ver docs/decisiones-tecnicas.md ADR-009.
+    # "gemini-flash-lite-latest" tiene su propio cupo gratuito, separado del de
+    # "gemini-flash-latest" (que se agoto en horas durante el desarrollo: el
+    # nivel gratuito de "-latest" resolvia a "gemini-3.5-flash" con limite de
+    # solo 20 requests/dia). Los IDs de modelo fijos (ej. "gemini-2.0-flash")
+    # tampoco tienen cupo gratuito para esta key. Ver docs/decisiones-tecnicas.md
+    # ADR-009 y ADR-010 antes de cambiar este default.
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_MODEL: str = "gemini-flash-lite-latest"
     GEMINI_MAX_TOKENS: int = 1024
 
     # --- JWT ---

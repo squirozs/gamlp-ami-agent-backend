@@ -275,3 +275,40 @@ integraciones municipales (ADR-005).
 absoluto — toda la migracion quedo contenida en las tres capas que hablan directo con
 el SDK del modelo. `SYSTEM_PROMPT` (`app/agents/prompts.py`) tampoco cambio: es texto
 plano independiente del proveedor.
+
+---
+
+## ADR-010: `gemini-flash-lite-latest` en vez de `gemini-flash-latest` (cuota diaria agotada en horas)
+
+**Contexto:** durante la primera prueba con WhatsApp real (webhook de Twilio +
+ngrok), el webhook llego bien, paso la verificacion de firma y ejecuto
+`buscar_normativa` correctamente, pero la llamada final al modelo fallo con `429
+RESOURCE_EXHAUSTED`: `limit: 20, model: gemini-3.5-flash`. El alias
+`gemini-flash-latest` (default hasta ese momento, ver ADR-009) habia rotado a
+apuntar a `gemini-3.5-flash` en algun momento entre el desarrollo inicial y esta
+prueba, y ese modelo especifico solo tiene 20 requests/dia gratis — cupo que ya se
+habia agotado con las pruebas en vivo hechas durante el desarrollo (function
+calling, vision, reintentos, etc. fueron mas de 20 llamadas en el dia).
+
+**Decision:** `GEMINI_MODEL` default cambia a `gemini-flash-lite-latest`, que
+resulto tener un cupo gratuito separado (no agotado) y se reverifico en vivo que
+soporta function calling y vision con el mismo shape usado en el resto del codigo
+— cero cambios de codigo, solo la variable de entorno.
+
+**Implicacion para la demo/pitch:** los alias `-latest` de Gemini pueden rotar a
+que modelo apuntan sin aviso, y cada alias/modelo tiene su **propio** cupo gratuito
+diario (no es un cupo compartido por key). Esto significa que:
+
+1. Antes de una demo importante, correr un smoke test rapido (un mensaje de prueba)
+   para confirmar que el modelo configurado todavia tiene cupo ese dia — no asumir
+   que "ya funciono antes" sigue siendo cierto horas despues.
+2. Si el cupo se agota a mitad de una demo en vivo, la mitigacion mas rapida es
+   cambiar `GEMINI_MODEL` a otro alias (`gemini-flash-latest` <->
+   `gemini-flash-lite-latest`) y hacer `docker compose up -d --force-recreate api`
+   para que tome el cambio (ver "Cambie una variable en .env pero no se aplica" en
+   `docs/guia-demo.md`).
+3. La solucion de fondo, si el pitch depende de esto, es **habilitar facturacion**
+   en el proyecto de Google Cloud asociado a la API key (Google AI Studio ->
+   Settings -> Plan de facturacion). Con facturacion activa el limite diario del
+   nivel gratuito ya no aplica; el costo de una demo corta es minimo (centavos de
+   dolar por el volumen de requests de una demo de pitch).

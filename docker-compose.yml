@@ -68,8 +68,17 @@ services:
         condition: service_healthy
       chroma:
         condition: service_started
+    # --proxy-headers + --forwarded-allow-ips="*": necesario para que
+    # request.url refleje https://<subdominio>.ngrok-free.dev (no
+    # http://localhost:8000) cuando se expone el webhook via ngrok para
+    # probar WhatsApp real. Sin esto, verify_twilio_signature() en
+    # app/core/security.py firma contra la URL equivocada y todo webhook de
+    # Twilio falla con 401 invalid_webhook_signature aunque las credenciales
+    # sean correctas. "*" es aceptable aqui porque es un entorno de demo
+    # local sin mas capas de proxy que ngrok; en produccion, fijar la IP real
+    # del proxy en vez de "*".
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
     volumes:
       - ./app:/srv/app/app
       # docs se monta (no se copia en el Dockerfile) para poder correr
