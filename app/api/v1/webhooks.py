@@ -14,11 +14,12 @@ from fastapi import APIRouter, Depends, Header, Request
 from app.agents.orchestrator import TramiteOrchestrator
 from app.api.v1.deps import rate_limiter
 from app.core.config import get_settings
-from app.core.exceptions import InvalidWebhookSignatureError
+from app.core.exceptions import InvalidWebhookSignatureError, MunicipalAPIUnavailableError
 from app.core.logging import get_logger
 from app.core.security import verify_twilio_signature
 from app.db.models.conversacion import RolMensaje
 from app.db.session import AsyncSessionLocal
+from app.integrations.whatsapp_client import WhatsAppClient
 from app.models.common import ApiModel
 from app.services.conversacion_service import ConversacionService
 
@@ -85,8 +86,16 @@ async def whatsapp_webhook(
 
         await conv_service.agregar_mensaje(conversacion.id, RolMensaje.AGENTE, respuesta)
 
-    # El envio saliente real via Twilio se hace con app.integrations.whatsapp_client;
-    # se omite aqui para no duplicar logica y mantener el webhook idempotente ante retries.
+    # El mensaje del ciudadano y la respuesta del agente ya quedaron persistidos
+    # arriba aunque el envio saliente falle: no queremos reprocesar todo el turno
+    # (y potencialmente duplicar la respuesta) si Twilio reintenta este webhook
+    # solo porque el envio de salida tuvo un problema transitorio.
+    try:
+        whatsapp = WhatsAppClient()
+        await whatsapp.enviar_mensaje(telefono, respuesta)
+    except MunicipalAPIUnavailableError:
+        logger.warning("whatsapp_reply_send_failed", num_media=num_media)
+
     logger.info("whatsapp_webhook_procesado", num_media=num_media)
     return WebhookAck(recibido=True)
 
