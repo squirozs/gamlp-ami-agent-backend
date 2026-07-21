@@ -104,7 +104,7 @@ Request:
   "ciudadano_id": "uuid",
   "tipo_tramite": "licencia_funcionamiento",
   "sistema_origen": "esitram",
-  "metadata_tramite": { "actividad_economica": "tienda de abarrotes" }
+  "metadata_tramite": { "actividad_economica": "venta de electrodomesticos", "nombre_comercial": "ElectroHogar Sopocachi" }
 }
 ```
 Response `201`: mismo shape que GET. Internamente dispara `iniciar_tramite` en el

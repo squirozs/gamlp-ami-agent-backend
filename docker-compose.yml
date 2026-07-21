@@ -101,3 +101,11 @@ services:
 volumes:
   postgres_data:
   chroma_data:
+
+networks:
+  default:
+    # Nombre fijo (en vez del default "<carpeta>_default") para que
+    # ami-copiloto-dashboard/docker-compose.yml pueda unirse a esta red como
+    # "external" y levantar ambos stacks juntos en una demo. Ver
+    # ami-copiloto-dashboard/docs/demo-sopocachi.md.
+    name: ami-network

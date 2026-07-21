@@ -36,6 +36,18 @@ tecnica competente del municipio. Este tramite se gestiona a traves del sistema
 iGOB y su avance puede consultarse con el codigo de expediente asignado al momento
 del registro.
 
+Donde presentar la documentacion (ejemplo de demo)
+
+La documentacion fisica para la licencia de funcionamiento se presenta en la
+Plataforma de Atencion al Contribuyente del GAMLP (Edificio Central Municipal,
+Calle Mercado esquina Colon, zona Centro, La Paz), en horario de oficina de
+lunes a viernes. Para negocios ubicados en la zona de Sopocachi y otras zonas
+del Macrodistrito Centro, tambien se puede presentar la documentacion en el
+modulo de atencion de la Subalcaldia Centro. De forma alternativa, el tramite
+puede iniciarse por los canales digitales habilitados por el GAMLP, adjuntando
+los mismos documentos en formato digital, y dando seguimiento con el codigo de
+expediente asignado por e-SITRAM.
+
 Nota sobre patentes y tasas municipales (ejemplo de demo)
 
 El pago de patentes municipales anuales es un requisito para mantener vigente la

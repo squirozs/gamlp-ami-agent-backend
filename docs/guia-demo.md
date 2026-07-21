@@ -37,11 +37,26 @@ cp .env.example .env
 
 `demo_reset.sh` hace, en orden: baja contenedores previos, reconstruye imagenes,
 levanta Postgres/Redis/ChromaDB, aplica las migraciones de Alembic, siembra datos
-ficticios (`scripts/seed_data.py`: un ciudadano, un tramite en curso, un
-recordatorio pendiente) e **ingesta un documento de normativa de ejemplo al RAG**
-(`docs/normativa/ejemplo_licencia_funcionamiento.txt`) para que
+ficticios (`scripts/seed_data.py`) e **ingesta un documento de normativa de
+ejemplo al RAG** (`docs/normativa/ejemplo_licencia_funcionamiento.txt`) para que
 `buscar_normativa` tenga contexto real que citar desde el primer momento. Al
 terminar, la API queda arriba en `http://localhost:8000/api/v1/health`.
+
+El escenario sembrado es **Daniela Choque**, quien quiere abrir "ElectroHogar
+Sopocachi" (venta de electrodomesticos en la zona de Sopocachi) y ya tiene un
+tramite de licencia de funcionamiento en revision. A diferencia de versiones
+anteriores de este script, los IDs son **fijos** (no aleatorios) para que se
+puedan usar directamente en una demo sin consultar psql:
+
+| Entidad | ID fijo |
+|---|---|
+| `ciudadano_id` (Daniela Choque) | `00000000-0000-0000-0000-000000000001` |
+| `tramite_id` (licencia de funcionamiento, `en_revision`) | `00000000-0000-0000-0000-000000000002` |
+| `recordatorio_id` | `00000000-0000-0000-0000-000000000004` |
+
+El flujo completo de esta demo, mostrado paso a paso desde el dashboard
+(`ami-copiloto-dashboard`), esta documentado en
+`ami-copiloto-dashboard/docs/demo-sopocachi.md`.
 
 Documentacion interactiva de la API: `http://localhost:8000/docs`.
 
@@ -72,11 +87,12 @@ con una consulta fuera de tema, ver seccion 5).
 ```bash
 curl -X POST http://localhost:8000/api/v1/tramites \
   -H "Content-Type: application/json" \
-  -d '{"ciudadano_id":"<uuid-del-seed>","tipo_tramite":"licencia_funcionamiento","sistema_origen":"esitram","metadata_tramite":{}}'
+  -d '{"ciudadano_id":"00000000-0000-0000-0000-000000000001","tipo_tramite":"licencia_funcionamiento","sistema_origen":"esitram","metadata_tramite":{"actividad_economica":"venta de electrodomesticos","nombre_comercial":"ElectroHogar Sopocachi"}}'
 ```
-El `ciudadano_id` del ciudadano sembrado lo puedes obtener conectandote a Postgres
-(`docker compose exec postgres psql -U ami -d ami_copiloto -c "select id, telefono_whatsapp from ciudadanos;"`)
-o revisando el log de `scripts/seed_data.py` al correr `demo_reset.sh`.
+El `ciudadano_id` de arriba es el de Daniela Choque, sembrado por
+`scripts/seed_data.py` (ver tabla de IDs fijos mas arriba). Tambien se puede
+confirmar conectandose a Postgres
+(`docker compose exec postgres psql -U ami -d ami_copiloto -c "select id, telefono_whatsapp from ciudadanos;"`).
 
 **c) Validar un documento por foto (vision):**
 ```bash
