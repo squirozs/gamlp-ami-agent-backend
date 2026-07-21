@@ -26,7 +26,14 @@ para tramites municipales del GAMLP. Analiza la imagen adjunta de un documento d
 Criterios: "aprobado" si el documento es legible, completo y corresponde al tipo esperado. \
 "observado" si hay problemas menores (foto borrosa, corte de bordes) que probablemente \
 requieran repetir la foto. "rechazado" si el documento no corresponde al tipo esperado o \
-esta vencido/ilegible."""
+esta vencido/ilegible.
+
+Ademas, si el tipo de documento tiene un nombre de persona y un numero identificador \
+visibles (ej. cedula_identidad, nit), extrae el nombre completo y el numero tal como \
+aparecen escritos en la foto — esto permite confirmarle al ciudadano que se leyo \
+correctamente antes de dar el documento por valido. Si el tipo de documento no tiene \
+esos campos (ej. croquis_ubicacion, plano) o no se alcanzan a leer con confianza, deja \
+nombre_completo y numero_documento como cadena vacia en vez de adivinar."""
 
 _RESPONSE_SCHEMA = {
     "type": "OBJECT",
@@ -41,8 +48,28 @@ _RESPONSE_SCHEMA = {
                 "legible": {"type": "BOOLEAN"},
                 "completo": {"type": "BOOLEAN"},
                 "detalle": {"type": "STRING", "description": "Explicacion breve, 1-2 oraciones."},
+                "nombre_completo": {
+                    "type": "STRING",
+                    "description": (
+                        "Nombre completo tal como aparece en el documento. Cadena vacia "
+                        "si el tipo de documento no tiene nombre o no se lee con confianza."
+                    ),
+                },
+                "numero_documento": {
+                    "type": "STRING",
+                    "description": (
+                        "Numero de CI/NIT/identificador principal tal como aparece en el "
+                        "documento. Cadena vacia si no aplica o no se lee con confianza."
+                    ),
+                },
             },
-            "required": ["legible", "completo", "detalle"],
+            "required": [
+                "legible",
+                "completo",
+                "detalle",
+                "nombre_completo",
+                "numero_documento",
+            ],
         },
     },
     "required": ["resultado", "observaciones"],
