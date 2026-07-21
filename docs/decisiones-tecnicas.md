@@ -416,3 +416,48 @@ todo sin exponer ningun UUID en las respuestas.
 **Consecuencia:** el ciudadano ahora puede completar el flujo entero (consultar
 requisitos, iniciar su tramite, validar sus documentos, consultar estado, programar
 recordatorio) sin salir de la conversacion de WhatsApp ni escribir jamas un UUID.
+
+---
+
+## ADR-013: Modelo de vision separado para validar documentos, y el bug del thinking_budget=0
+
+**Contexto:** un ciudadano probando el flujo real reporto que la validacion de una
+foto de NIT (buena calidad, tomada con cuidado) siempre respondia algo generico tipo
+"esta borrosa, mandala de nuevo", sin extraer ningun dato. Investigando dos problemas
+reales, no relacionados con la calidad real de la foto:
+
+1. **`DocumentoService` usaba los mismos modelos que el chat** (`GEMINI_MODEL` /
+   `GEMINI_FALLBACK_MODEL`, con `gemini-flash-lite-latest` primero por ser el que
+   tiene mas cupo gratuito disponible, ver ADR-010). Flash-Lite prioriza velocidad y
+   costo sobre precision multimodal — en un documento denso (certificado de NIT con
+   texto chico, tablas) tiene peor OCR que el modelo completo.
+2. **`thinking_config=ThinkingConfig(thinking_budget=0)` (agregado en ADR-009 para
+   evitar que "thinking" agotara `max_output_tokens`) causa `400 INVALID_ARGUMENT`
+   en `gemini-flash-latest`**, aunque funciona bien en `gemini-flash-lite-latest`. El
+   modelo completo aparentemente no permite desactivar el razonamiento del todo.
+   Ese 400 caia en el `except Exception` generico de `_analizar_con_vision`, que
+   **nunca logueaba el tipo de error real** y siempre convertia cualquier fallo (400,
+   429, timeout, lo que sea) en el mismo mensaje de dominio "no se pudo analizar el
+   documento, intenta con otra foto mas clara" — indistinguible para el ciudadano
+   (y para nosotros mirando logs) de un rechazo real por mala calidad de imagen.
+   Verificado en vivo reproduciendo el 400 directamente contra la API.
+
+**Decision:**
+
+- Se agregaron `GEMINI_VISION_MODEL` (`gemini-flash-latest` por defecto) y
+  `GEMINI_VISION_FALLBACK_MODEL` (`gemini-flash-lite-latest`), settings separados de
+  los del chat. `DocumentoService` ahora prueba primero el modelo completo (mejor
+  OCR) y cae al lite solo si se agota su cupo — al reves que el chat, que prioriza el
+  lite primero porque ahi la precision multimodal no es el cuello de botella.
+- `thinking_budget` paso de `0` a `128`: un presupuesto chico pero no-cero, que
+  funciona en ambos modelos (verificado en vivo) sin volver a caer en el truncamiento
+  de MAX_TOKENS que motivo el `0` original en ADR-009. `max_output_tokens` subio de
+  500 a 800 para dejar margen.
+- `_analizar_con_vision` ahora loguea `error_type` antes de convertir la excepcion en
+  `DocumentValidationError`, para que un fallo de infraestructura no se disfrace de
+  "foto borrosa" en los logs la proxima vez.
+
+**Consecuencia:** la misma imagen sintetica de prueba (texto de NIT simulado) paso de
+`400 INVALID_ARGUMENT` silencioso a un resultado correcto con nombre y numero
+extraidos. Esto no garantiza que toda foto real sea legible — pero elimina una causa
+de falso rechazo que no tenia nada que ver con la calidad de la foto.

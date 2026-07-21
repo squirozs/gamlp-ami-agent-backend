@@ -16,8 +16,11 @@ from google.genai import types
 from app.core.config import get_settings
 from app.core.exceptions import DocumentValidationError
 from app.core.gemini_retry import generar_con_fallback, modelos_con_fallback
+from app.core.logging import get_logger
 from app.db.models.documento_validado import DocumentoValidado, ResultadoValidacion
 from app.db.session import AsyncSessionLocal
+
+logger = get_logger(__name__)
 
 _PROMPT_VALIDACION = """Eres un asistente que valida fotos de documentos oficiales bolivianos \
 para tramites municipales del GAMLP. Analiza la imagen adjunta de un documento de tipo \
@@ -82,7 +85,9 @@ class DocumentoService:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self._modelos = modelos_con_fallback(settings.GEMINI_MODEL, settings.GEMINI_FALLBACK_MODEL)
+        self._modelos = modelos_con_fallback(
+            settings.GEMINI_VISION_MODEL, settings.GEMINI_VISION_FALLBACK_MODEL
+        )
 
     async def validar(
         self,
@@ -116,6 +121,15 @@ class DocumentoService:
         except (
             Exception
         ) as exc:  # noqa: BLE001 - cualquier fallo de vision se traduce a error de dominio
+            # Loggear el tipo/causa real ANTES de convertirlo en el mensaje generico
+            # de dominio: sin esto, un 400/429/timeout de la API se ve identico a un
+            # rechazo real por mala calidad de foto tanto en logs como para el
+            # ciudadano, hasta que alguien lo reproduce a mano (ver ADR-013).
+            logger.warning(
+                "document_vision_analysis_failed",
+                tipo_documento=tipo_documento,
+                error_type=type(exc).__name__,
+            )
             raise DocumentValidationError(
                 "No se pudo analizar el documento. Intenta con otra foto mas clara."
             ) from exc
@@ -141,16 +155,21 @@ class DocumentoService:
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=_RESPONSE_SCHEMA,
-            max_output_tokens=500,
+            max_output_tokens=800,
             # Los modelos "-latest" de Gemini razonan por defecto ("thinking") y esos
-            # tokens de pensamiento se descuentan de max_output_tokens: con thinking
-            # habilitado, este schema (objeto anidado con 4 campos) agotaba el
+            # tokens de pensamiento se descuentan de max_output_tokens — con thinking
+            # sin acotar, este schema (objeto anidado con 5 campos) agotaba el
             # presupuesto antes de emitir el JSON final y devolvia texto truncado /
-            # vacio (finish_reason=MAX_TOKENS). Se desactiva para esta tarea de
-            # clasificacion simple, donde no aporta precision y si consume el
-            # presupuesto de salida. Verificado en vivo contra la API real — ver
-            # docs/decisiones-tecnicas.md ADR-009.
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            # vacio (finish_reason=MAX_TOKENS, ver ADR-009). Pero thinking_budget=0
+            # (desactivarlo del todo) SOLO funciona en "gemini-flash-lite-latest": en
+            # "gemini-flash-latest" (el modelo completo, usado primero para vision
+            # por mejor OCR, ver ADR-013) budget=0 devuelve
+            # 400 INVALID_ARGUMENT — ese 400, atrapado por el except generico de
+            # _analizar_con_vision, se le mostraba al ciudadano como "no se pudo
+            # analizar el documento", indistinguible de un rechazo real por mala
+            # calidad de foto. Un presupuesto chico pero no-cero (128) funciona en
+            # ambos modelos. Verificado en vivo contra la API real.
+            thinking_config=types.ThinkingConfig(thinking_budget=128),
         )
 
         async def llamar(modelo: str) -> types.GenerateContentResponse:

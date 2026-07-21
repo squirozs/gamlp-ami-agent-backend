@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     GEMINI_FALLBACK_MODEL: str = "gemini-flash-latest"
     GEMINI_MAX_TOKENS: int = 1024
 
+    # DocumentoService (validacion de fotos) usa un par de modelos separado del chat:
+    # "-lite" prioriza velocidad/costo, que sirve para conversar, pero tiene peor OCR
+    # en documentos densos (ej. certificados de NIT con texto chico, tablas, QR) que
+    # "gemini-flash-latest" (modelo completo). Se prueba el completo primero aqui y
+    # se cae al lite solo si se agota su cupo — al reves que en el chat. Ver ADR-013.
+    GEMINI_VISION_MODEL: str = "gemini-flash-latest"
+    GEMINI_VISION_FALLBACK_MODEL: str = "gemini-flash-lite-latest"
+
     # --- Tavily (busqueda web real, complementa el RAG de normativa) ---
     # Vacio = la tool buscar_en_internet responde "no configurada" en vez de fallar.
     TAVILY_API_KEY: str = ""
