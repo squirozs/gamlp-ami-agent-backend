@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Annotated
 
 import httpx
-from anthropic.types import MessageParam
 from fastapi import APIRouter, Depends, Header, Request
 
 from app.agents.orchestrator import TramiteOrchestrator
@@ -72,16 +71,17 @@ async def whatsapp_webhook(
         await conv_service.agregar_mensaje(conversacion.id, RolMensaje.CIUDADANO, cuerpo)
 
         historial_mensajes = await conv_service.historial(conversacion.id, limite=20)
-        historial_anthropic: list[MessageParam] = [
+        # Gemini usa los roles "user"/"model" (no "assistant" como Anthropic/OpenAI).
+        historial_gemini: list[dict[str, str]] = [
             {
-                "role": "user" if m.rol == RolMensaje.CIUDADANO else "assistant",
+                "role": "user" if m.rol == RolMensaje.CIUDADANO else "model",
                 "content": m.contenido,
             }
             for m in historial_mensajes[:-1]
         ]
 
         orchestrator = TramiteOrchestrator()
-        respuesta = await orchestrator.responder(historial_anthropic, cuerpo, imagen=imagen)
+        respuesta = await orchestrator.responder(historial_gemini, cuerpo, imagen=imagen)
 
         await conv_service.agregar_mensaje(conversacion.id, RolMensaje.AGENTE, respuesta)
 

@@ -1,5 +1,5 @@
-"""Orquestador del agente: recibe un mensaje del ciudadano, corre el loop de tool use
-de Anthropic y devuelve la respuesta final de texto.
+"""Orquestador del agente: recibe un mensaje del ciudadano, corre el loop de function
+calling de Gemini y devuelve la respuesta final de texto.
 
 No contiene logica de negocio de dominio: cada capacidad concreta vive en una tool
 independiente y testeable (app/agents/tools/). El orquestador solo sabe conversar con
@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from anthropic import AsyncAnthropic
-from anthropic.types import MessageParam
+from google import genai
+from google.genai import types
 
 from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.tools import tool_registry
 from app.agents.tools.validate_document import imagen_actual
 from app.core.config import get_settings
+from app.core.gemini_retry import gemini_retry
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,56 +29,65 @@ class TramiteOrchestrator:
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
-        self._max_tokens = settings.ANTHROPIC_MAX_TOKENS
+        self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self._model = settings.GEMINI_MODEL
+        self._max_tokens = settings.GEMINI_MAX_TOKENS
 
     async def responder(
         self,
-        historial: list[MessageParam],
+        historial: list[dict[str, str]],
         mensaje_ciudadano: str,
         imagen: tuple[bytes, str] | None = None,
     ) -> str:
         """Procesa un turno de conversacion y devuelve el texto de respuesta del agente.
 
-        `imagen` (bytes, media_type) se deja disponible solo para la tool
-        validar_documento durante este turno; nunca se persiste."""
+        `historial` son turnos previos como `{"role": "user"|"model", "content": str}`
+        (Gemini usa "model" donde Anthropic/OpenAI usan "assistant"). `imagen` (bytes,
+        media_type) se deja disponible solo para la tool validar_documento durante este
+        turno; nunca se persiste."""
         token = imagen_actual.set(imagen) if imagen is not None else None
         try:
-            messages: list[MessageParam] = [
-                *historial,
-                {"role": "user", "content": mensaje_ciudadano},
+            contents: list[types.Content] = [
+                types.Content(
+                    role=turno["role"], parts=[types.Part.from_text(text=turno["content"])]
+                )
+                for turno in historial
             ]
+            contents.append(
+                types.Content(role="user", parts=[types.Part.from_text(text=mensaje_ciudadano)])
+            )
+
+            config = types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                tools=tool_registry.gemini_tools(),
+                max_output_tokens=self._max_tokens,
+            )
 
             for _ in range(_MAX_TOOL_ITERATIONS):
-                response = await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=self._max_tokens,
-                    system=SYSTEM_PROMPT,
-                    tools=tool_registry.anthropic_tool_specs(),  # type: ignore[arg-type]
-                    messages=messages,
-                )
+                response = await self._generate(contents, config)
+                if not response.candidates:
+                    return "No tengo una respuesta para eso en este momento."
+                candidate = response.candidates[0]
+                assert candidate.content is not None and candidate.content.parts is not None
+                parts = candidate.content.parts
+                function_calls = [part.function_call for part in parts if part.function_call]
 
-                if response.stop_reason != "tool_use":
-                    return _extraer_texto(response.content)
+                if not function_calls:
+                    return _extraer_texto(parts)
 
-                messages.append({"role": "assistant", "content": response.content})
-                tool_results: list[dict[str, Any]] = []
+                # Se reenvia el turno del modelo tal cual (incluye thought_signature) para
+                # que Gemini mantenga continuidad de razonamiento entre llamadas a tools.
+                contents.append(candidate.content)
 
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
-                    logger.info("agent_tool_call", tool_name=block.name)
-                    resultado = await tool_registry.ejecutar(block.name, dict(block.input))
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": _to_text(resultado),
-                        }
+                function_response_parts: list[types.Part] = []
+                for call in function_calls:
+                    nombre = call.name or ""
+                    logger.info("agent_tool_call", tool_name=nombre)
+                    resultado = await tool_registry.ejecutar(nombre, dict(call.args or {}))
+                    function_response_parts.append(
+                        types.Part.from_function_response(name=nombre, response=resultado)
                     )
-
-                messages.append({"role": "user", "content": tool_results})  # type: ignore[typeddict-item]
+                contents.append(types.Content(role="user", parts=function_response_parts))
 
             return (
                 "Estoy teniendo dificultades para completar esta consulta. "
@@ -87,13 +97,15 @@ class TramiteOrchestrator:
             if token is not None:
                 imagen_actual.reset(token)
 
+    @gemini_retry
+    async def _generate(
+        self, contents: list[types.Content], config: types.GenerateContentConfig
+    ) -> types.GenerateContentResponse:
+        return await self._client.aio.models.generate_content(
+            model=self._model, contents=contents, config=config
+        )
 
-def _extraer_texto(content: Any) -> str:
-    partes = [block.text for block in content if getattr(block, "type", None) == "text"]
-    return "\n".join(partes).strip() or "No tengo una respuesta para eso en este momento."
 
-
-def _to_text(resultado: dict[str, Any]) -> str:
-    import json
-
-    return json.dumps(resultado, ensure_ascii=False)
+def _extraer_texto(parts: list[Any]) -> str:
+    textos = [part.text for part in parts if getattr(part, "text", None)]
+    return "\n".join(textos).strip() or "No tengo una respuesta para eso en este momento."

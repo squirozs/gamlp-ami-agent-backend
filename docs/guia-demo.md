@@ -15,7 +15,7 @@ carpeta de Windows (`/mnt/c/...` o `/mnt/e/...`).
 
 | Componente | Estado para la demo | Que hacer |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | **Indispensable** | No hay modo mock para el LLM/vision: sin esta key el agente no responde ni valida documentos. Conseguir una key en https://console.anthropic.com/ |
+| `GEMINI_API_KEY` | **Indispensable** | No hay modo mock para el LLM/vision: sin esta key el agente no responde ni valida documentos. Conseguir una key gratis en https://aistudio.google.com/apikey (solo necesitas una cuenta de Google, sin tarjeta). Dejar `GEMINI_MODEL=gemini-flash-latest` (el default) — los IDs de modelo fijos como `gemini-2.0-flash` pueden reportar cuota gratuita 0 para keys nuevas, ver ADR-009 en `decisiones-tecnicas.md` |
 | Embeddings del RAG | **No requiere ninguna key** | ChromaDB descarga y corre localmente su propio modelo (`all-MiniLM-L6-v2`, ONNX, ~80 MB) la primera vez que se indexa o busca. Esa descarga tarda 15-30s la primera vez; corridas posteriores son instantaneas |
 | `ESITRAM_MODE` / `IGOB_MODE` | Ya en `mock` por defecto | No requiere accion. Los mocks generan codigos de tramite y estados deterministicos (`app/integrations/esitram_mock.py`, `igob_mock.py`) |
 | Docker Desktop con integracion WSL (o Docker Engine nativo en la distro) | **Indispensable** para el flujo con un solo comando | Levanta Postgres, Redis, ChromaDB, la API y el worker. Verificado con `docker compose` v5 corriendo dentro de WSL Ubuntu |
@@ -27,7 +27,7 @@ carpeta de Windows (`/mnt/c/...` o `/mnt/e/...`).
 ```bash
 cp .env.example .env
 # Edita .env y completa como minimo:
-#   ANTHROPIC_API_KEY=sk-ant-...
+#   GEMINI_API_KEY=...
 #   APP_SECRET_KEY=<valor random>
 #   JWT_SECRET_KEY=<valor random>
 # Deja ESITRAM_MODE=mock e IGOB_MODE=mock (default) para la demo.

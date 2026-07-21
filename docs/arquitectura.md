@@ -65,7 +65,7 @@ flowchart TB
     REG --> T1 & T2 & T3 & T4
     T1 --> SRAG --> CHROMA
     T2 --> STR --> ESITRAM & IGOB
-    T3 --> SDOC -->|solo en memoria| ClaudeVision[Claude Vision API]
+    T3 --> SDOC -->|solo en memoria| GeminiVision[Gemini Vision API]
     T4 --> SREC --> PG
     ORCH --> SCONV --> PG
     WH -->|respuesta| WA
@@ -108,8 +108,8 @@ api (HTTP, FastAPI)  ->  services (logica de negocio pura)  ->  db / integration
    `X-Twilio-Signature` antes de tocar cualquier dato.
 2. El webhook persiste el mensaje, arma el historial de la conversacion y llama a
    `TramiteOrchestrator.responder(...)`.
-3. El orquestador corre el loop de tool use de Claude: el modelo decide llamar a
-   `buscar_normativa` con la consulta del ciudadano.
+3. El orquestador corre el loop de function calling de Gemini: el modelo decide
+   llamar a `buscar_normativa` con la consulta del ciudadano.
 4. `RagService` busca en ChromaDB y filtra por `RAG_SIMILARITY_THRESHOLD`. Si no hay
    nada relevante, devuelve `encontrado=false` y el modelo esta forzado (por el
    system prompt) a admitir que no tiene informacion oficial.

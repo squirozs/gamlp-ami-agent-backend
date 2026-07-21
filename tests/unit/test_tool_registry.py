@@ -32,21 +32,29 @@ async def test_registry_devuelve_error_para_tool_desconocida() -> None:
     assert "error" in resultado
 
 
-def test_anthropic_tool_specs_incluye_nombre_y_schema() -> None:
+def test_gemini_tools_incluye_nombre_y_schema_en_mayuscula() -> None:
     registry = ToolRegistry()
 
     @registry.register(
-        name="ping", description="ping", input_schema={"type": "object", "properties": {}}
+        name="ping",
+        description="ping",
+        input_schema={
+            "type": "object",
+            "properties": {"consulta": {"type": "string", "description": "texto"}},
+        },
     )
     async def ping(tool_input: dict[str, object]) -> dict[str, object]:
         return {}
 
-    specs = registry.anthropic_tool_specs()
+    tools = registry.gemini_tools()
 
-    assert specs == [
-        {
-            "name": "ping",
-            "description": "ping",
-            "input_schema": {"type": "object", "properties": {}},
-        }
-    ]
+    assert len(tools) == 1
+    declarations = tools[0].function_declarations
+    assert declarations is not None
+    assert len(declarations) == 1
+    declaration = declarations[0]
+    assert declaration.name == "ping"
+    assert declaration.description == "ping"
+    assert declaration.parameters is not None
+    assert declaration.parameters.type == "OBJECT"
+    assert declaration.parameters.properties["consulta"].type == "STRING"

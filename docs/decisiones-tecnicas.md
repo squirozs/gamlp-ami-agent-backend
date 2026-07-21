@@ -31,7 +31,7 @@ requisitos de retencion legal) sin aportar valor al producto: solo se necesita e
 
 **Decision:** la foto llega como bytes en memoria (`UploadFile` en el endpoint REST, o
 media descargado del webhook de WhatsApp), se envia directo a la API de vision de
-Anthropic, y los bytes se descartan explicitamente apenas se obtiene el resultado
+Gemini, y los bytes se descartan explicitamente apenas se obtiene el resultado
 (ver `app/services/documento_service.py` y `app/agents/tools/validate_document.py`).
 Nunca se escribe a disco, nunca se indexa en ChromaDB, nunca se guarda en una columna
 BLOB de Postgres. Solo se persiste `resultado` + `observaciones` (metadatos) en
@@ -67,7 +67,7 @@ orquestador con el conocimiento de cada tramite especifico.
 
 **Decision:** cada tool se define en su propio modulo bajo `app/agents/tools/` y se
 auto-registra en un `ToolRegistry` singleton via decorador (`@tool_registry.register`).
-El orquestador solo conoce `tool_registry.anthropic_tool_specs()` y
+El orquestador solo conoce `tool_registry.gemini_tools()` y
 `tool_registry.ejecutar(name, input)`.
 
 **Consecuencias:** agregar una tool nueva es agregar un archivo nuevo e importarlo en
@@ -203,3 +203,75 @@ con mocks no podian detectar. Se documentan aqui para que no se reintroduzcan.
 SQLite y mockea RagService), lo que confirma que "los tests pasan" no es sustituto de
 correr el stack real al menos una vez por cambio de infraestructura. Ver
 `docs/guia-demo.md` para el procedimiento verificado de arranque.
+
+---
+
+## ADR-009: Migracion de Anthropic (Claude) a Google Gemini
+
+**Contexto:** el proyecto se disenio originalmente contra la API de Anthropic
+(Claude), pero para la demo del hackathon no hubo acceso a una key de Anthropic (ni a
+las APIs municipales reales de e-SITRAM/iGOB, que ya estaban mockeadas por
+`ESITRAM_MODE=mock`/`IGOB_MODE=mock`). Se dispuso en cambio de una API key gratuita de
+Gemini (Google AI Studio).
+
+**Decision:** se reemplazo `anthropic` por `google-genai` en todo el codigo que habla
+con el modelo:
+
+- `app/agents/orchestrator.py`: el loop de tool-use ahora es un loop de *function
+  calling* de Gemini. La deteccion de "el modelo quiere llamar una tool" ya no es un
+  `stop_reason == "tool_use"` (Gemini no tiene ese campo): se revisa si algun `part` de
+  la respuesta trae `function_call`. El turno del modelo se reenvia tal cual
+  (`contents.append(candidate.content)`) para preservar el `thought_signature` interno
+  del modelo entre llamadas a tools, en vez de reconstruirlo a mano.
+- `app/agents/tools/registry.py`: `anthropic_tool_specs()` -> `gemini_tools()`. Los
+  `input_schema` de cada tool son JSON Schema estandar (`"type": "object"`, `"type":
+  "string"`, minusculas); Gemini exige el mismo shape pero con los valores de `type` en
+  MAYUSCULA (`"OBJECT"`, `"STRING"`). Se agrego un conversor recursivo en vez de
+  reescribir cada schema a mano, para que las tools nuevas no tengan que preocuparse
+  por el formato especifico del proveedor de LLM.
+- `app/services/documento_service.py`: la validacion de documentos por vision ahora usa
+  `response_mime_type="application/json"` + `response_schema` (JSON mode nativo de
+  Gemini) en vez de pedirle al modelo por prompt que "responda solo JSON" y parsear con
+  `json.loads` a ciegas (fragil: un modelo puede agregar texto antes/despues del JSON).
+- El historial de conversacion persistido (`Mensaje.rol`) no cambio — ya se guardaba
+  como texto plano por turno, no como bloques tipados de un SDK especifico — pero el
+  mapeo a roles de proveedor en `app/api/v1/webhooks.py` paso de
+  `"user"/"assistant"` (Anthropic/OpenAI) a `"user"/"model"` (Gemini).
+
+**Hallazgo no obvio — cuota gratuita por alias de modelo, no por API:** contra la key
+de demo, los IDs de modelo fijos (`gemini-2.0-flash`, `gemini-2.0-flash-lite`,
+`gemini-2.5-flash`, `gemini-pro-latest`) devolvieron `429 RESOURCE_EXHAUSTED` con
+`limit: 0` — es decir, cuota gratuita cero para esos IDs especificos en esta key/region,
+no un limite ya consumido. Los alias rotativos `gemini-flash-latest` y
+`gemini-flash-lite-latest` si tuvieron cuota gratuita disponible y funcionaron
+(incluyendo function calling y vision, verificado en vivo). Por eso
+`GEMINI_MODEL=gemini-flash-latest` es el default en `.env.example`, no un ID de modelo
+fijo. Si se factura la cuenta de Google Cloud asociada a la key, probablemente todos
+los IDs queden disponibles y se pueda fijar una version exacta para produccion.
+
+**Hallazgo no obvio — "thinking" consume el presupuesto de `max_output_tokens`:** en
+`DocumentoService._generate`, con el `response_schema` completo (objeto anidado de 4
+campos) y `max_output_tokens=300`, la respuesta llegaba truncada o vacia
+(`finish_reason=MAX_TOKENS`) porque el modelo gasto 269 de esos 300 tokens en
+"pensar" antes de emitir el JSON final (`usage_metadata.thoughts_token_count`). Se
+subio el limite a 500 y se desactivo el thinking para esta tarea puntual
+(`thinking_config=types.ThinkingConfig(thinking_budget=0)`), ya que es una
+clasificacion simple donde el razonamiento extendido no aporta precision. El
+orquestador conversacional (`TramiteOrchestrator`) no desactiva thinking a proposito:
+ahi si ayuda a decidir cuando llamar una tool y a seguir las reglas del system prompt.
+
+**Reintento acotado ante sobrecarga transitoria del nivel gratuito:** durante las
+pruebas en vivo aparecieron `503 UNAVAILABLE` ("high demand") y `429
+RESOURCE_EXHAUSTED` intermitentes que desaparecian al reintentar la misma request
+segundos despues. `app/core/gemini_retry.py` envuelve las llamadas a
+`generate_content` (tanto en `TramiteOrchestrator._generate` como en
+`DocumentoService._generate`) con un reintento de 3 intentos y backoff exponencial
+(1-8s) usando `tenacity` (ya era dependencia del proyecto), acotado a `ServerError` y
+`ClientError` con codigo 429 — nunca reintenta errores 4xx genuinos (input invalido,
+etc.), mismo criterio de "reintentos acotados, no infinitos" que el circuit breaker de
+integraciones municipales (ADR-005).
+
+**Consecuencias:** la logica de negocio (`app/services/*`, RAG, tools) no cambio en
+absoluto — toda la migracion quedo contenida en las tres capas que hablan directo con
+el SDK del modelo. `SYSTEM_PROMPT` (`app/agents/prompts.py`) tampoco cambio: es texto
+plano independiente del proveedor.

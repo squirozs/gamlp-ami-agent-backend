@@ -6,37 +6,56 @@ ni se indexa en el vector store (ver docs/decisiones-tecnicas.md)."""
 
 from __future__ import annotations
 
-import base64
+import json
 import uuid
 from typing import Any
 
-from anthropic import AsyncAnthropic
+from google import genai
+from google.genai import types
 
 from app.core.config import get_settings
 from app.core.exceptions import DocumentValidationError
+from app.core.gemini_retry import gemini_retry
 from app.db.models.documento_validado import DocumentoValidado, ResultadoValidacion
 from app.db.session import AsyncSessionLocal
 
 _PROMPT_VALIDACION = """Eres un asistente que valida fotos de documentos oficiales bolivianos \
 para tramites municipales del GAMLP. Analiza la imagen adjunta de un documento de tipo \
-"{tipo_documento}" y responde EXCLUSIVAMENTE en este formato JSON, sin texto adicional:
-
-{{"resultado": "aprobado" | "observado" | "rechazado", \
-"observaciones": {{"legible": true|false, "completo": true|false, "detalle": "texto breve"}}}}
+"{tipo_documento}" y determina si es apta para presentar en el tramite.
 
 Criterios: "aprobado" si el documento es legible, completo y corresponde al tipo esperado. \
 "observado" si hay problemas menores (foto borrosa, corte de bordes) que probablemente \
 requieran repetir la foto. "rechazado" si el documento no corresponde al tipo esperado o \
 esta vencido/ilegible."""
 
+_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "resultado": {
+            "type": "STRING",
+            "enum": [r.value for r in ResultadoValidacion],
+        },
+        "observaciones": {
+            "type": "OBJECT",
+            "properties": {
+                "legible": {"type": "BOOLEAN"},
+                "completo": {"type": "BOOLEAN"},
+                "detalle": {"type": "STRING", "description": "Explicacion breve, 1-2 oraciones."},
+            },
+            "required": ["legible", "completo", "detalle"],
+        },
+    },
+    "required": ["resultado", "observaciones"],
+}
+
 
 class DocumentoService:
-    """Valida documentos via el modelo multimodal de Anthropic, sin persistir la imagen."""
+    """Valida documentos via el modelo multimodal de Gemini, sin persistir la imagen."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
+        self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self._model = settings.GEMINI_MODEL
 
     async def validar(
         self,
@@ -63,35 +82,9 @@ class DocumentoService:
     async def _analizar_con_vision(
         self, tipo_documento: str, imagen_bytes: bytes, media_type: str
     ) -> dict[str, Any]:
-        import json
-
-        imagen_b64 = base64.b64encode(imagen_bytes).decode("utf-8")
         try:
-            response = await self._client.messages.create(
-                model=self._model,
-                max_tokens=300,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {  # type: ignore[list-item]
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": imagen_b64,
-                                },
-                            },
-                            {
-                                "type": "text",
-                                "text": _PROMPT_VALIDACION.format(tipo_documento=tipo_documento),
-                            },
-                        ],
-                    }
-                ],
-            )
-            texto = response.content[0].text if response.content else "{}"  # type: ignore[union-attr]
-            data: dict[str, Any] = json.loads(texto)
+            response = await self._generate(tipo_documento, imagen_bytes, media_type)
+            data: dict[str, Any] = json.loads(response.text or "{}")
             return data
         except (
             Exception
@@ -99,3 +92,36 @@ class DocumentoService:
             raise DocumentValidationError(
                 "No se pudo analizar el documento. Intenta con otra foto mas clara."
             ) from exc
+
+    @gemini_retry
+    async def _generate(
+        self, tipo_documento: str, imagen_bytes: bytes, media_type: str
+    ) -> types.GenerateContentResponse:
+        return await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_bytes(data=imagen_bytes, mime_type=media_type),
+                        types.Part.from_text(
+                            text=_PROMPT_VALIDACION.format(tipo_documento=tipo_documento)
+                        ),
+                    ],
+                )
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_RESPONSE_SCHEMA,
+                max_output_tokens=500,
+                # Los modelos "-latest" de Gemini razonan por defecto ("thinking") y esos
+                # tokens de pensamiento se descuentan de max_output_tokens: con thinking
+                # habilitado, este schema (objeto anidado con 4 campos) agotaba el
+                # presupuesto antes de emitir el JSON final y devolvia texto truncado /
+                # vacio (finish_reason=MAX_TOKENS). Se desactiva para esta tarea de
+                # clasificacion simple, donde no aporta precision y si consume el
+                # presupuesto de salida. Verificado en vivo contra la API real — ver
+                # docs/decisiones-tecnicas.md ADR-009.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )

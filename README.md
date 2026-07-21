@@ -19,8 +19,8 @@ al RAG.
 ## Stack
 
 Python 3.11+ · FastAPI · Pydantic v2 · PostgreSQL (SQLAlchemy 2.0 async + Alembic) ·
-ChromaDB (RAG) · Anthropic SDK (`claude-sonnet-4-6`, tool use) · Redis · APScheduler ·
-Docker Compose · pytest · black / ruff / mypy · pre-commit · GitHub Actions.
+ChromaDB (RAG) · Google GenAI SDK (Gemini, function calling + vision) · Redis ·
+APScheduler · Docker Compose · pytest · black / ruff / mypy · pre-commit · GitHub Actions.
 
 ## Arquitectura en breve
 

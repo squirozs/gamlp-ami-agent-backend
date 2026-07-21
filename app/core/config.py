@@ -45,10 +45,14 @@ class Settings(BaseSettings):
     RAG_SIMILARITY_THRESHOLD: float = 0.45
     RAG_TOP_K: int = 5
 
-    # --- Anthropic ---
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
-    ANTHROPIC_MAX_TOKENS: int = 1024
+    # --- Gemini (Google GenAI) ---
+    # "gemini-flash-latest"/"gemini-flash-lite-latest" son los alias verificados con
+    # cuota disponible en el nivel gratuito al momento de escribir esto; los IDs de
+    # modelo fijos (ej. "gemini-2.0-flash") pueden reportar cuota 0 para keys nuevas
+    # de AI Studio segun la region/plan. Ver docs/decisiones-tecnicas.md ADR-009.
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_MAX_TOKENS: int = 1024
 
     # --- JWT ---
     JWT_SECRET_KEY: str = "change-me"
