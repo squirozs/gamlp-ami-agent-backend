@@ -15,7 +15,7 @@ from google.genai import types
 
 from app.core.config import get_settings
 from app.core.exceptions import DocumentValidationError
-from app.core.gemini_retry import gemini_retry
+from app.core.gemini_retry import generar_con_fallback, modelos_con_fallback
 from app.db.models.documento_validado import DocumentoValidado, ResultadoValidacion
 from app.db.session import AsyncSessionLocal
 
@@ -55,7 +55,7 @@ class DocumentoService:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self._model = settings.GEMINI_MODEL
+        self._modelos = modelos_con_fallback(settings.GEMINI_MODEL, settings.GEMINI_FALLBACK_MODEL)
 
     async def validar(
         self,
@@ -93,35 +93,38 @@ class DocumentoService:
                 "No se pudo analizar el documento. Intenta con otra foto mas clara."
             ) from exc
 
-    @gemini_retry
     async def _generate(
         self, tipo_documento: str, imagen_bytes: bytes, media_type: str
     ) -> types.GenerateContentResponse:
-        return await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=[
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_bytes(data=imagen_bytes, mime_type=media_type),
-                        types.Part.from_text(
-                            text=_PROMPT_VALIDACION.format(tipo_documento=tipo_documento)
-                        ),
-                    ],
-                )
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_RESPONSE_SCHEMA,
-                max_output_tokens=500,
-                # Los modelos "-latest" de Gemini razonan por defecto ("thinking") y esos
-                # tokens de pensamiento se descuentan de max_output_tokens: con thinking
-                # habilitado, este schema (objeto anidado con 4 campos) agotaba el
-                # presupuesto antes de emitir el JSON final y devolvia texto truncado /
-                # vacio (finish_reason=MAX_TOKENS). Se desactiva para esta tarea de
-                # clasificacion simple, donde no aporta precision y si consume el
-                # presupuesto de salida. Verificado en vivo contra la API real — ver
-                # docs/decisiones-tecnicas.md ADR-009.
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_bytes(data=imagen_bytes, mime_type=media_type),
+                    types.Part.from_text(
+                        text=_PROMPT_VALIDACION.format(tipo_documento=tipo_documento)
+                    ),
+                ],
+            )
+        ]
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=_RESPONSE_SCHEMA,
+            max_output_tokens=500,
+            # Los modelos "-latest" de Gemini razonan por defecto ("thinking") y esos
+            # tokens de pensamiento se descuentan de max_output_tokens: con thinking
+            # habilitado, este schema (objeto anidado con 4 campos) agotaba el
+            # presupuesto antes de emitir el JSON final y devolvia texto truncado /
+            # vacio (finish_reason=MAX_TOKENS). Se desactiva para esta tarea de
+            # clasificacion simple, donde no aporta precision y si consume el
+            # presupuesto de salida. Verificado en vivo contra la API real — ver
+            # docs/decisiones-tecnicas.md ADR-009.
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
+
+        async def llamar(modelo: str) -> types.GenerateContentResponse:
+            return await self._client.aio.models.generate_content(
+                model=modelo, contents=contents, config=config
+            )
+
+        return await generar_con_fallback(self._modelos, llamar)

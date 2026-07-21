@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # ADR-009 y ADR-010 antes de cambiar este default.
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-flash-lite-latest"
+    # Si GEMINI_MODEL agota su cupo diario (429), se reintenta automaticamente con
+    # este alias antes de fallar la conversacion. Ver app/core/gemini_retry.py.
+    GEMINI_FALLBACK_MODEL: str = "gemini-flash-latest"
     GEMINI_MAX_TOKENS: int = 1024
 
     # --- JWT ---

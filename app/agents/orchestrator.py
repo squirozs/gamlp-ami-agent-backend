@@ -16,7 +16,7 @@ from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.tools import tool_registry
 from app.agents.tools.validate_document import imagen_actual
 from app.core.config import get_settings
-from app.core.gemini_retry import gemini_retry
+from app.core.gemini_retry import generar_con_fallback, modelos_con_fallback
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +30,7 @@ class TramiteOrchestrator:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self._model = settings.GEMINI_MODEL
+        self._modelos = modelos_con_fallback(settings.GEMINI_MODEL, settings.GEMINI_FALLBACK_MODEL)
         self._max_tokens = settings.GEMINI_MAX_TOKENS
 
     async def responder(
@@ -97,13 +97,15 @@ class TramiteOrchestrator:
             if token is not None:
                 imagen_actual.reset(token)
 
-    @gemini_retry
     async def _generate(
         self, contents: list[types.Content], config: types.GenerateContentConfig
     ) -> types.GenerateContentResponse:
-        return await self._client.aio.models.generate_content(
-            model=self._model, contents=contents, config=config
-        )
+        async def llamar(modelo: str) -> types.GenerateContentResponse:
+            return await self._client.aio.models.generate_content(
+                model=modelo, contents=contents, config=config
+            )
+
+        return await generar_con_fallback(self._modelos, llamar)
 
 
 def _extraer_texto(parts: list[Any]) -> str:
